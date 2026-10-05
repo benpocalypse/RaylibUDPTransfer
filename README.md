@@ -1,0 +1,34 @@
+# UDP File Transfer over SSH
+
+A raylib/raygui file transfer tool that sends UDP datagrams through an existing SSH connection, without requiring router or firewall changes.
+
+## Dependencies
+
+- raylib (system package or built from source)
+- raygui.h in third_party/
+- udp-over-tcp (https://github.com/mullvad/udp-over-tcp) installed on both machines
+- OpenSSH client and server
+
+## Build
+
+    mkdir build && cd build
+    cmake ..
+    cmake --build .
+
+## Run
+
+On the local machine:
+
+    ./scripts/setup_tunnel.sh user@remote-host
+
+Then in another terminal:
+
+    ./build/udp_transfer --receive
+
+Enter 127.0.0.1 as the target IP and 3000 as the port (the local proxy's UDP listener). The datagrams will be tunneled through SSH to the remote machine, where they emerge as UDP on port 6000.
+
+## Command-line arguments
+
+The only command-line argument that this program currently supports is for which ever computer intends to receive the file to be transferred. It runs RaylibUDPTransfer in headless mode and will only receive files.
+
+To run in headless mode, enter: `udp_transfer --receive`
