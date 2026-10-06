@@ -15,6 +15,8 @@ int proxy_start_local(const char *listen_host, int listen_port,
         snprintf(f, sizeof(f), "%s:%d", forward_host, forward_port);
 
         // Requires udp-over-tcp installed: https://github.com/mullvad/udp-over-tcp
+        // There are no binaries so cargo and rustup will have to be the latest version
+        // to build and install tcp2udp.
         execlp("tcp2udp", "tcp2udp",
                "--tcp-listen", l,
                "--udp-forward", f,

@@ -20,7 +20,7 @@ int main(int argc, char **argv) {
         Transport *t = transport_create("0.0.0.0", 3000, &cbs, NULL);
         while (1) {
             transport_poll(t);
-            usleep(1000);  // 1mS
+            usleep(1000);  // 1mS - don't hog the CPU
         }
     }
 
