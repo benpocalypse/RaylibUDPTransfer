@@ -2,6 +2,8 @@
 
 A raylib/raygui file transfer tool that sends UDP datagrams through an existing SSH connection, without requiring router or firewall changes.
 
+![Screenshot of the UDP File Transfer GUI](screenshot.png)
+
 ## Dependencies
 
 - raylib (system package or built from source)
