@@ -34,3 +34,6 @@ Enter 127.0.0.1 as the target IP and 3000 as the port (the local proxy's UDP lis
 The only command-line argument that this program currently supports is for which ever computer intends to receive the file to be transferred. It runs RaylibUDPTransfer in headless mode and will only receive files.
 
 To run in headless mode, enter: `udp_transfer --receive`
+
+## Optional Configuration
+This application assumes that OpenSSH is being used as the SSHd server. An optional step to reduce potential network congestion is to enable BBR in the OpenSSH config, or just enter this at the CLI: `net.ipv4.tcp_congestion_control = bbr`
