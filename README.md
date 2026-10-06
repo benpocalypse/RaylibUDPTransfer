@@ -36,4 +36,4 @@ The only command-line argument that this program currently supports is for which
 To run in headless mode, enter: `udp_transfer --receive`
 
 ## Optional Configuration
-This application assumes that OpenSSH is being used as the SSHd server. An optional step to reduce potential network congestion is to enable BBR in the OpenSSH config, or just enter this at the CLI: `net.ipv4.tcp_congestion_control = bbr`
+This application assumes that OpenSSH is being used as the SSHd server. An optional step to reduce potential network congestion is to enable BBR in the OpenSSH config, or just enter this at the CLI: `net.ipv4.tcp_congestion_control = bbr` or use `sysctl` to set it system wide.
