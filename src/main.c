@@ -20,10 +20,13 @@ static int run_receive_mode(void) {
     TransportCallbacks cbs = {0};
     cbs.on_file_received = on_file_received_headless;
 
-    /* Header declares: transport_create(host, port, cbs, user)
-     * The host here is the local bind address; the transport uses
-     * whatever peer the tunnel forwards to it. */
-    Transport *t = transport_create("0.0.0.0", 3000, &cbs, NULL);
+    /* 4-argument signature: bind address, then peer address.
+     * In receive mode the peer address is a placeholder — the
+     * receiver learns the sender's address from the first packet
+     * it receives. */
+    Transport *t = transport_create("0.0.0.0", 3000,
+                                    "127.0.0.1", 0,
+                                    &cbs, NULL);
     if (!t) {
         fprintf(stderr, "Failed to create transport\n");
         return 1;

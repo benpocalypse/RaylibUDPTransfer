@@ -74,9 +74,10 @@ void vm_start_send(ViewModel *vm) {
             .on_file_received = on_file_received,
             .on_error = on_error
         };
-        vm->transport = transport_create(vm->model.target_ip,
-                                         vm->model.target_port,
-                                         &cbs, vm);
+        vm->transport = transport_create("0.0.0.0", 0,
+                                 vm->model.target_ip,
+                                 vm->model.target_port,
+                                 &cbs, vm);
         if (!vm->transport) {
             strncpy(vm->model.status_message, "Failed to open transport",
                     sizeof(vm->model.status_message) - 1);

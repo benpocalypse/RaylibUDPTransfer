@@ -19,8 +19,11 @@ add_executable(udp_transfer
     src/viewmodel.c
     src/view.c
     src/transport.c
+    src/bbr.c
     src/proxy.c
 )
+
+# (remove the ENet find_library / find_path / target_link_libraries lines)
 
 target_include_directories(udp_transfer PRIVATE
     include
