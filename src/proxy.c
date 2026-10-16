@@ -5,7 +5,8 @@
 #include <sys/wait.h>
 
 int proxy_start_local(const char *listen_host, int listen_port,
-                      const char *forward_host, int forward_port) {
+                      const char *forward_host, int forward_port)
+{
     pid_t pid = fork();
     if (pid < 0) return -1;
 
@@ -26,7 +27,8 @@ int proxy_start_local(const char *listen_host, int listen_port,
     return (int)pid;
 }
 
-void proxy_stop(int pid) {
+void proxy_stop(int pid)
+{
     if (pid > 0) {
         kill(pid, SIGTERM);
         waitpid(pid, NULL, 0);
@@ -36,7 +38,8 @@ void proxy_stop(int pid) {
 int proxy_start_ssh_tunnel(const char *remote_user,
                            const char *remote_host,
                            int local_port,
-                           int remote_port) {
+                           int remote_port)
+{
     pid_t pid = fork();
     if (pid < 0) return -1;
 
@@ -51,6 +54,7 @@ int proxy_start_ssh_tunnel(const char *remote_user,
         execlp("ssh", "ssh", "-N", "-L", forward, target, (char *)NULL);
         _exit(127);
     }
+
     return (int)pid;
 }
 

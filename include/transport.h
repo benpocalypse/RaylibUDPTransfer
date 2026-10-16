@@ -3,12 +3,12 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <stddef.h>
 #include "ratesample.h"
 
 typedef struct Transport Transport;
 
-typedef struct {
+typedef struct
+{
     void (*on_progress)(float progress, void *user);
     void (*on_file_received)(const char *name, uint64_t size, void *user);
     void (*on_error)(const char *message, void *user);

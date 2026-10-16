@@ -3,7 +3,8 @@
 
 #include "model.h"
 
-typedef struct {
+typedef struct
+{
     TransferModel model;
 
     char progress_text[64];

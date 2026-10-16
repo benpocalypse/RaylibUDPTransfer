@@ -12,7 +12,8 @@
  * rate_sample struct, so the algorithm port is mechanical.
  */
 
-typedef struct {
+typedef struct
+{
     /* How much new data did this ACK cover? */
     uint64_t delivered;        /* cumulative packets delivered */
     uint64_t prior_delivered;  /* delivered when the ACKed packet was sent */

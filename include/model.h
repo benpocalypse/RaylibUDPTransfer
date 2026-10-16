@@ -10,7 +10,8 @@
 #define MAX_FILENAME 256
 #define CHUNK_SIZE 8192
 
-typedef enum {
+typedef enum
+{
     STATE_IDLE,
     STATE_SENDING,
     STATE_RECEIVING,
@@ -18,13 +19,15 @@ typedef enum {
     STATE_DONE
 } TransferState;
 
-typedef struct {
+typedef struct
+{
     char name[MAX_FILENAME];
     uint64_t size;
     bool complete;
 } ReceivedFile;
 
-typedef struct {
+typedef struct
+{
     char target_ip[MAX_IP_LEN];
     int target_port;
     char file_path[MAX_PATH_LEN];

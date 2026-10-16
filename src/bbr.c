@@ -5,21 +5,24 @@
 
 struct Bbr { int placeholder; };
 
-Bbr *bbr_create(uint32_t initial_cwnd) {
+Bbr *bbr_create(uint32_t initial_cwnd)
+{
     (void)initial_cwnd;
     return calloc(1, sizeof(Bbr));
 }
 
 void bbr_destroy(Bbr *b) { free(b); }
 
-BbrDecision bbr_on_init(Bbr *b) {
+BbrDecision bbr_on_init(Bbr *b)
+{
     (void)b;
     BbrDecision d = { .pacing_rate = 1u << 20, .cwnd = 10, .mode = BBR_STARTUP };
     return d;
 }
 
 BbrDecision bbr_on_ack(Bbr *b, const RateSample *rs,
-                       uint32_t pif, uint32_t bif) {
+                       uint32_t pif, uint32_t bif)
+{
     (void)b; (void)rs; (void)pif; (void)bif;
     BbrDecision d = { .pacing_rate = 1u << 20, .cwnd = 10, .mode = BBR_STARTUP };
     return d;
