@@ -31,6 +31,7 @@ void transport_destroy(Transport *t);
 bool transport_queue_send(Transport *t, const char *path);
 void transport_poll(Transport *t);
 void transport_cancel(Transport *t);
+bool transport_send_complete(const Transport *t);
 
 /*
  * Diagnostics (for the GUI)

@@ -12,6 +12,10 @@ add_executable(udp_transfer
     src/viewmodel.c
     src/view.c
     src/transport.c
+    src/transport_utils.c
+    src/transport_sender.c
+    src/transport_receiver.c
+    src/unit_tests.c
     src/bbr.c
     src/proxy.c
 )

@@ -56,16 +56,16 @@ void vm_update(ViewModel *vm)
         vm->model.progress = transport_get_progress(vm->transport);
 
         /* If we were sending and the transport reports all packets
-         * have been transmitted, transition to DONE. Note: in Stage 2a
+         * have been transmitted, transition to DONE. Note:
          * this means "transmitted", not "delivered" — the sender has
          * no confirmation that the receiver got everything until ACKs
-         * are added in Stage 2b. */
+         * are added later on. */
         if (vm->model.state == STATE_SENDING &&
-            vm->model.progress >= 0.999f)
+            transport_send_complete(vm->transport))
         {
             vm->model.state = STATE_DONE;
-            strncpy(vm->model.status_message,
-                    "Sent (no delivery confirmation)",
+
+            strncpy(vm->model.status_message, "Delivered",
                     sizeof(vm->model.status_message) - 1);
         }
     }
