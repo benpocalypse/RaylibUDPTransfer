@@ -17,21 +17,21 @@
 
 #define WIRE_MAGIC 0xB8B8B8B8u
 #define WIRE_VERSION 1
-#define WIRE_MAX_PAYLOAD 1200 /* conservative MTU safety margin              \
-                               * This value was chosen to work safely with   \
-                               * most home routers and internet connections. \
-                               */
+
+/* conservative MTU safety margin
+* This value was chosen to work safely with
+* most home routers and internet connections.
+*/
+#define WIRE_MAX_PAYLOAD 1200
 #define WIRE_HEADER_SIZE 40
 
-typedef enum
-{
+typedef enum {
   WIRE_DATA = 1,   /* carries file payload */
   WIRE_ACK = 2,    /* acknowledges one or more DATA packets */
   WIRE_CONTROL = 3 /* file header, completion, cancel, etc. */
 } WireType;
 
-typedef struct __attribute__ ((packed))
-{
+typedef struct __attribute__((packed)) {
   uint32_t magic;        /* WIRE_MAGIC, sanity check */
   uint8_t version;       /* WIRE_VERSION */
   uint8_t type;          /* WireType */
@@ -52,8 +52,7 @@ typedef struct __attribute__ ((packed))
 #define CONTROL_FILE_COMPLETE 2
 #define CONTROL_FILE_ABORT 3
 
-typedef struct __attribute__ ((packed))
-{
+typedef struct __attribute__((packed)) {
   uint8_t control_type; /* CONTROL_* */
   uint8_t reserved[3];
   uint32_t name_len;      /* bytes of filename following this header */

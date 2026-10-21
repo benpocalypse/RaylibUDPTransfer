@@ -1,17 +1,16 @@
 #ifndef TRANSPORT_H
 #define TRANSPORT_H
 
-#include <stdint.h>
-#include <stdbool.h>
 #include "ratesample.h"
+#include <stdbool.h>
+#include <stdint.h>
 
 typedef struct Transport Transport;
 
-typedef struct
-{
-    void (*on_progress)(float progress, void *user);
-    void (*on_file_received)(const char *name, uint64_t size, void *user);
-    void (*on_error)(const char *message, void *user);
+typedef struct {
+  void (*on_progress)(float progress, void *user);
+  void (*on_file_received)(const char *name, uint64_t size, void *user);
+  void (*on_error)(const char *message, void *user);
 } TransportCallbacks;
 
 /*
@@ -34,7 +33,7 @@ void transport_cancel(Transport *t);
 bool transport_send_complete(const Transport *t);
 
 /*
- * Diagnostics (for the GUI)
+ * Quality of life for the GUI
  */
 float transport_get_progress(const Transport *t);
 uint64_t transport_get_pacing_rate(const Transport *t);

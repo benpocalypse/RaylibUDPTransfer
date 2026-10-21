@@ -1,22 +1,17 @@
 #ifndef BBR_H
 #define BBR_H
 
-#include <stdint.h>
-#include <stdbool.h>
 #include "ratesample.h"
+#include <stdbool.h>
+#include <stdint.h>
 
 typedef struct Bbr Bbr;
 
-typedef enum {
-    BBR_STARTUP,
-    BBR_DRAIN,
-    BBR_PROBE_BW,
-    BBR_PROBE_RTT
-} BbrMode;
+typedef enum { BBR_STARTUP, BBR_DRAIN, BBR_PROBE_BW, BBR_PROBE_RTT } BbrMode;
 
 /*
- * Create a BBR controller. The transport owns it; BBR owns no sockets.
- * initial_cwnd is in packets; typical value is 10.
+ * Create a BBR controller. The transport owns it. BBR owns no sockets.
+ * initial_cwnd is in packets. typical value is 10.
  */
 Bbr *bbr_create(uint32_t initial_cwnd);
 void bbr_destroy(Bbr *b);
@@ -27,13 +22,12 @@ void bbr_destroy(Bbr *b);
  * control decisions the transport must apply.
  */
 typedef struct {
-    uint64_t pacing_rate;   /* bytes per second */
-    uint32_t cwnd;          /* packets */
-    BbrMode  mode;          /* current state, for diagnostics */
+  uint64_t pacing_rate; /* bytes per second */
+  uint32_t cwnd;        /* packets */
+  BbrMode mode;         /* current state, for diagnostics */
 } BbrDecision;
 
-BbrDecision bbr_on_ack(Bbr *b, const RateSample *rs,
-                       uint32_t packets_in_flight,
+BbrDecision bbr_on_ack(Bbr *b, const RateSample *rs, uint32_t packets_in_flight,
                        uint32_t bytes_in_flight);
 
 /*

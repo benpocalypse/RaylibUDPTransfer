@@ -3,7 +3,7 @@
 
 /*
  * Run the transport unit test suite.
- * Returns 0 if all tests pass, 1 if any fail.
+ * Returns 0 if all tests pass, 1 if tests any fail.
  */
 int run_unit_tests(void);
 

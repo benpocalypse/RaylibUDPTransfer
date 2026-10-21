@@ -10,34 +10,31 @@
 #define MAX_FILENAME 256
 #define CHUNK_SIZE 8192
 
-typedef enum
-{
-    STATE_IDLE,
-    STATE_SENDING,
-    STATE_RECEIVING,
-    STATE_ERROR,
-    STATE_DONE
+typedef enum {
+  STATE_IDLE = 0,
+  STATE_SENDING,
+  STATE_RECEIVING,
+  STATE_ERROR,
+  STATE_DONE
 } TransferState;
 
-typedef struct
-{
-    char name[MAX_FILENAME];
-    uint64_t size;
-    bool complete;
+typedef struct {
+  char name[MAX_FILENAME];
+  uint64_t size;
+  bool complete;
 } ReceivedFile;
 
-typedef struct
-{
-    char target_ip[MAX_IP_LEN];
-    int target_port;
-    char file_path[MAX_PATH_LEN];
+typedef struct {
+  char target_ip[MAX_IP_LEN];
+  int target_port;
+  char file_path[MAX_PATH_LEN];
 
-    ReceivedFile received[MAX_RECEIVED];
-    int received_count;
+  ReceivedFile received[MAX_RECEIVED];
+  int received_count;
 
-    float progress;
-    TransferState state;
-    char status_message[256];
+  float progress;
+  TransferState state;
+  char status_message[256];
 } TransferModel;
 
 void model_init(TransferModel *m);
