@@ -41,6 +41,7 @@ bool sender_open_file(Transport *t)
 {
   FILE *f = fopen(t->send_path, "rb");
   t->send_completed_ok = false;
+
   if (!f)
   {
     set_last_error(t, "cannot open file for sending");
@@ -68,8 +69,6 @@ bool sender_open_file(Transport *t)
   t->send_acked_seq     = 0;
   t->send_in_progress   = true;
 
-  /* Stage 2e: default pacing rate. Stage 2f will make this BBR-driven. */
-  t->pacing_rate        = 10 * 1024 * 1024;
   t->next_send_time_us  = 0;
 
   uint8_t ctrl_buf[WIRE_HEADER_SIZE + sizeof(ControlHeader) + 256];
@@ -110,7 +109,22 @@ bool sender_open_file(Transport *t)
 
 void sender_pump(Transport *t)
 {
-  if (!t->send_in_progress || !t->send_file || !t->peer_known) return;
+  if (!t->send_in_progress || !t->send_file || !t->peer_known)
+    return;
+
+  /* Refill pacing tokens based on elapsed time */
+  uint64_t now = now_us();
+  uint64_t elapsed = now - t->last_poll_us;
+
+  if (elapsed > 0 && t->pacing_rate > 0)
+  {
+    uint64_t add = (t->pacing_rate * elapsed) / 1000000ULL;
+    t->pacing_tokens += add;
+    t->last_poll_us = now;
+
+    if (t->pacing_tokens > t->pacing_rate)
+      t->pacing_tokens = t->pacing_rate;
+  }
 
   uint8_t packet[WIRE_HEADER_SIZE + WIRE_MAX_PAYLOAD];
 
@@ -122,8 +136,19 @@ void sender_pump(Transport *t)
       return;
     }
 
-    if (t->send_next_seq >= t->send_acked_seq + OUTGOING_QUEUE_SIZE)
+    /* Use BBR's cwnd instead of the hardcoded ring size */
+    uint32_t cwnd = bbr_cwnd(t->bbr);
+    if (cwnd > OUTGOING_QUEUE_SIZE)
+      cwnd = OUTGOING_QUEUE_SIZE; /* Safety cap */
+
+    if (t->send_next_seq >= t->send_acked_seq + cwnd)
+    {
       return;
+    }
+
+    /* Pacing gate: wait for tokens */
+    if (t->pacing_tokens < WIRE_MAX_PAYLOAD) return;
+    t->pacing_tokens -= WIRE_MAX_PAYLOAD;
 
     /* Stage 2e: pacing gate */
     uint64_t now = now_us();
@@ -235,16 +260,34 @@ void sender_handle_ack(Transport *t, const WireHeader *h)
   if (base_op->in_use && base_op->seq == base)
   {
     RateSample rs;
+
     memset(&rs, 0, sizeof(rs));
+    /* BBR expects delivered to be the number of packets delivered
+     * in this specific sample interval, not cumulative. */
+    uint64_t current_delivered = t->send_acked_seq + 1;
     rs.interval_us     = now_us() - base_op->send_time_us;
     rs.rtt_us          = (int64_t)rs.interval_us;
-    rs.delivered       = t->send_acked_seq + 1;
+    rs.delivered = t->send_acked_seq + 1;
     rs.prior_delivered = base_op->delivered_at_send / WIRE_MAX_PAYLOAD;
+    fprintf(stderr, "SENDER: rs.acked_sacked=%u base=%u delivered=%llu prior_delivered=%llu\n",
+            rs.acked_sacked, base, (unsigned long long)rs.delivered,
+            (unsigned long long)rs.prior_delivered);
     rs.acked_sacked    = 1;
+    fprintf(stderr, "SENDER: rs.acked_sacked=%u (base=%u)\n", rs.acked_sacked, base);
     rs.prior_in_flight = base_op->in_flight_at_send;
     rs.tx_in_flight    = base_op->in_flight_at_send;
 
-    /* Stage 2f will call bbr_on_ack(&rs) here. */
+    /* Stage 2f: Pass the sample to BBR */
+    BbrDecision dec = bbr_on_ack(t->bbr, &rs,
+                                 t->send_next_seq - t->send_acked_seq,
+                                 (t->send_next_seq - t->send_acked_seq) * WIRE_MAX_PAYLOAD);
+
+    /* Apply BBR's pacing rate decision to the transport */
+    t->pacing_rate = dec.pacing_rate;
+
+    fprintf(stderr, "BBR_DECISION: mode=%d pacing_rate=%llu cwnd=%u\n",
+            dec.mode, (unsigned long long)dec.pacing_rate, dec.cwnd);
+
     fprintf(stderr, "BBR_INPUT: rtt=%llu us inflight=%u\n",
             (unsigned long long)rs.interval_us, rs.tx_in_flight);
   }

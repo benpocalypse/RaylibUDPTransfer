@@ -2,6 +2,7 @@
 #define TRANSPORT_INTERNAL_H
 
 #include "transport.h"
+#include "bbr.h"
 #include "wire.h"
 
 #include <stdint.h>
@@ -17,72 +18,77 @@
 
 typedef struct
 {
-    uint32_t seq;
-    uint64_t send_time_us;
-    uint32_t payload_len;
-    uint8_t  buf[WIRE_HEADER_SIZE + WIRE_MAX_PAYLOAD];
-    bool     in_use;
+  uint32_t seq;
+  uint64_t send_time_us;
+  uint32_t payload_len;
+  uint8_t  buf[WIRE_HEADER_SIZE + WIRE_MAX_PAYLOAD];
+  bool     in_use;
 
-    /* Stage 2d: snapshots taken at send time */
-    uint64_t delivered_at_send;
-    uint32_t in_flight_at_send;
+  /* Stage 2d: snapshots taken at send time */
+  uint64_t delivered_at_send;
+  uint32_t in_flight_at_send;
 } OutgoingPacket;
 
 typedef struct
 {
-    uint32_t seq;
-    uint32_t payload_len;
-    uint8_t  data[WIRE_MAX_PAYLOAD];
-    bool     filled;
+  uint32_t seq;
+  uint32_t payload_len;
+  uint8_t  data[WIRE_MAX_PAYLOAD];
+  bool     filled;
 } IncomingChunk;
 
 struct Transport
 {
-    /* Socket */
-    int sock;
-    struct sockaddr_in bind_addr;
-    struct sockaddr_in peer_addr;
-    bool peer_known;
+  /* Socket */
+  int sock;
+  struct sockaddr_in bind_addr;
+  struct sockaddr_in peer_addr;
+  bool peer_known;
 
-    /* Callbacks */
-    TransportCallbacks cbs;
-    void *user;
+  /* Callbacks */
+  TransportCallbacks cbs;
+  void *user;
 
-    /* Diagnostics */
-    char last_error[256];
+  /* Diagnostics */
+  char last_error[256];
 
-    /* Sender state */
-    FILE *send_file;
-    uint64_t send_file_size;
-    uint32_t send_total_packets;
-    uint32_t send_next_seq;
-    uint32_t send_acked_seq;
-    bool     send_completed_ok;
-    bool     send_in_progress;
-    char     send_path[MAX_PATH_LEN_LOCAL];
-    bool     has_queued_send;
+  /* Sender state */
+  FILE *send_file;
+  uint64_t send_file_size;
+  uint32_t send_total_packets;
+  uint32_t send_next_seq;
+  uint32_t send_acked_seq;
+  bool     send_completed_ok;
+  bool     send_in_progress;
+  char     send_path[MAX_PATH_LEN_LOCAL];
+  bool     has_queued_send;
 
-    /* Pacing (Stage 2e) */
-    uint64_t pacing_rate;
-    uint64_t next_send_time_us;
+  /* Pacing (Stage 2e) */
+  uint64_t pacing_rate;
+  uint64_t next_send_time_us;
+  uint64_t pacing_tokens;    /* bytes allowed to send right now */
+  uint64_t last_poll_us;     /* when tokens were last refilled */
 
-    /* Receiver state */
-    FILE *recv_file;
-    char recv_filename[MAX_PATH_LEN_LOCAL];
-    uint64_t recv_file_size;
-    uint32_t recv_total_packets;
-    uint32_t recv_expected_seq;
-    uint32_t recv_highest_seq;
-    bool     recv_in_progress;
-    IncomingChunk *recv_window;
+  /* Receiver state */
+  FILE *recv_file;
+  char recv_filename[MAX_PATH_LEN_LOCAL];
+  uint64_t recv_file_size;
+  uint32_t recv_total_packets;
+  uint32_t recv_expected_seq;
+  uint32_t recv_highest_seq;
+  bool     recv_in_progress;
+  IncomingChunk *recv_window;
 
-    /* Connection identity */
-    uint32_t conn_id;
-    uint32_t sender_conn_id;
+  /* Connection identity */
+  uint32_t conn_id;
+  uint32_t sender_conn_id;
 
-    /* Bookkeeping */
-    OutgoingPacket *outgoing;
-    bool cancelled;
+  /* Actual BBR implementation */
+  Bbr *bbr;
+
+  /* Bookkeeping */
+  OutgoingPacket *outgoing;
+  bool cancelled;
 };
 
 /* Shared helpers, implemented in transport_utils.c */

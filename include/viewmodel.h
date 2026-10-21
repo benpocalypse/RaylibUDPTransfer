@@ -1,22 +1,27 @@
 #ifndef VIEWMODEL_H
 #define VIEWMODEL_H
 
+#include <pthread.h>
 #include "model.h"
+#include "transport.h" // Ensure Transport is defined
 
 typedef struct
 {
-    TransferModel model;
+  TransferModel model;
 
-    char progress_text[64];
-    char state_text[64];
-    bool send_enabled;
-    bool cancel_enabled;
+  char progress_text[64];
+  char state_text[64];
+  bool send_enabled;
+  bool cancel_enabled;
 
-    // raygui edit-mode state for text fields
-    bool ip_edit_mode;
-    bool path_edit_mode;
+  bool ip_edit_mode;
+  bool path_edit_mode;
 
-    void *transport;
+  Transport *transport;
+
+  /* NEW: Threading */
+  pthread_t poll_thread;
+  bool thread_running;
 } ViewModel;
 
 void vm_init(ViewModel *vm);
