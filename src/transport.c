@@ -1,271 +1,295 @@
-#include "transport.h"
-#include <enet/enet.h>
+#include "transport_internal.h"
+
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
-#define MAX_FILENAME 256
-#define CHUNK_SIZE 8192  // ENet will fragment if larger than MTU
+static int make_udp_socket(const char *host, int port,
+                           struct sockaddr_in *out_addr) {
+  int fd = socket(AF_INET, SOCK_DGRAM, 0);
 
-// Channel definitions
-#define CHANNEL_CONTROL 0   // Reliable: file metadata, commands
-#define CHANNEL_DATA    1   // Reliable: file data chunks
+  if (fd < 0)
+    return -1;
 
-typedef enum {
-    MSG_FILE_HEADER = 1,
-    MSG_FILE_DATA,
-    MSG_FILE_COMPLETE
-} MessageType;
+  int flags = fcntl(fd, F_GETFL, 0);
 
-// Wire header for file metadata
-typedef struct __attribute__((packed)) {
-    uint8_t  type;
-    uint32_t name_len;
-    uint64_t file_size;
-    // filename follows
-} FileHeader;
+  if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+    close(fd);
+    return -1;
+  }
 
-struct Transport {
-    ENetHost *host;
-    ENetPeer *peer;
-    bool is_server;
-    bool connected;
-    bool cancelled;
-    float progress;
+  int rcvbuf = 4 * 1024 * 1024;
 
-    // Receiving state
-    FILE *recv_file;
-    char recv_filename[MAX_FILENAME];
-    uint64_t recv_expected;
-    uint64_t recv_received;
+  setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &rcvbuf, sizeof(rcvbuf));
+  memset(out_addr, 0, sizeof(*out_addr));
+  out_addr->sin_family = AF_INET;
+  out_addr->sin_port = htons((uint16_t)port);
 
-    // Sending state
-    FILE *send_file;
-    uint64_t send_total;
-    uint64_t send_sent;
+  if (inet_pton(AF_INET, host, &out_addr->sin_addr) != 1) {
+    close(fd);
+    return -1;
+  }
 
-    // Queued file to send
-    char queued_path[512];
-    bool has_queued_send;
+  if (bind(fd, (struct sockaddr *)out_addr, sizeof(*out_addr)) < 0) {
+    close(fd);
+    return -1;
+  }
 
-    TransportCallbacks cbs;
-    void *user;
-};
+  return fd;
+}
 
-static bool send_file_chunk(Transport *t);
-
-Transport *transport_create(const char *host, int port,
+Transport *transport_create(const char *bind_host, int bind_port,
+                            const char *peer_host, int peer_port,
                             const TransportCallbacks *cbs, void *user) {
-    if (enet_initialize() != 0) {
-        return NULL;
-    }
+  Transport *t = calloc(1, sizeof(*t));
 
-    Transport *t = calloc(1, sizeof(*t));
-    if (!t) return NULL;
+  if (!t)
+    return NULL;
 
+  t->pacing_tokens = 0;
+  t->last_poll_us = now_us();
+  t->bbr = bbr_create(10); // initial cwnd of 10 packets
+  t->outgoing = calloc(OUTGOING_QUEUE_SIZE, sizeof(OutgoingPacket));
+
+  if (!t->outgoing) {
+    free(t);
+    return NULL;
+  }
+
+  t->user = user;
+
+  if (cbs)
     t->cbs = *cbs;
-    t->user = user;
-    t->progress = 0.0f;
 
-    ENetAddress address;
-    address.host = ENET_HOST_ANY;
-    address.port = (enet_uint16)port;
+  t->sock = make_udp_socket(bind_host, bind_port, &t->bind_addr);
 
-    // Create a server host bound to the local port.
-    // We act as the "server" side locally; the remote side connects to us
-    // through the tunnel. This avoids needing to know the remote's address.
-    t->host = enet_host_create(&address,
-                               1,      // allow 1 peer
-                               2,      // 2 channels: control + data
-                               0, 0);  // unlimited bandwidth
-    if (!t->host) {
-        free(t);
-        return NULL;
+  if (t->sock < 0) {
+    free(t->outgoing);
+    free(t);
+
+    return NULL;
+  }
+
+  t->sender_conn_id = 0;
+
+  if (peer_port != 0) {
+    memset(&t->peer_addr, 0, sizeof(t->peer_addr));
+    t->peer_addr.sin_family = AF_INET;
+    t->peer_addr.sin_port = htons((uint16_t)peer_port);
+
+    if (inet_pton(AF_INET, peer_host, &t->peer_addr.sin_addr) != 1) {
+      close(t->sock);
+      free(t->outgoing);
+      free(t);
+
+      return NULL;
     }
 
-    t->is_server = true;
-    return t;
+    t->peer_known = true;
+  }
+
+  t->conn_id = (uint32_t)now_us() ^ (uint32_t)getpid();
+  t->pacing_rate = 100 * 1024; // Initial pacing of 100 KB/s
+  t->pacing_tokens = 0;
+  t->next_send_time_us = 0;
+
+  return t;
+}
+
+Transport *transport_create_for_test(void) {
+  Transport *t = calloc(1, sizeof(*t));
+
+  if (!t)
+    return NULL;
+
+  t->pacing_tokens = 0;
+  t->last_poll_us = now_us();
+  t->bbr = bbr_create(10); // initial cwnd of 10 packets
+  t->outgoing = calloc(OUTGOING_QUEUE_SIZE, sizeof(OutgoingPacket));
+
+  if (!t->outgoing) {
+    free(t);
+    return NULL;
+  }
+
+  t->sock = -1;                     // No real socket
+  t->conn_id = 0xDEADBEEF;          // Love a good joke =P
+  t->pacing_rate = 5 * 1024 * 1024; /* 5 MB/s initial pacing rate */
+  t->next_send_time_us = 0;
+
+  return t;
 }
 
 void transport_destroy(Transport *t) {
-    if (!t) return;
-    if (t->peer) {
-        enet_peer_disconnect(t->peer, 0);
-        // Give a brief moment for disconnect to flush
-        ENetEvent event;
-        while (enet_host_service(t->host, &event, 100) > 0) {
-            if (event.type == ENET_EVENT_TYPE_DISCONNECT) break;
-        }
-    }
-    if (t->recv_file) fclose(t->recv_file);
-    if (t->send_file) fclose(t->send_file);
-    if (t->host) enet_host_destroy(t->host);
-    enet_deinitialize();
-    free(t);
+  if (!t)
+    return;
+
+  sender_close_file(t);
+  receiver_close_file(t);
+
+  if (t->recv_window)
+    free(t->recv_window);
+
+  if (t->outgoing)
+    free(t->outgoing);
+
+  if (t->sock >= 0)
+    close(t->sock);
+
+  if (t->bbr)
+    bbr_destroy(t->bbr);
+
+  free(t);
 }
 
 bool transport_queue_send(Transport *t, const char *path) {
-    if (!t || !t->connected) return false;
-    strncpy(t->queued_path, path, sizeof(t->queued_path) - 1);
-    t->has_queued_send = true;
-    return true;
+  if (!t || !path || !*path)
+    return false;
+
+  if (t->send_in_progress)
+    return false;
+
+  snprintf(t->send_path, sizeof(t->send_path), "%s", path);
+
+  return sender_open_file(t);
 }
 
-static bool send_file_header(Transport *t) {
-    FILE *f = fopen(t->queued_path, "rb");
-    if (!f) return false;
+static void handle_incoming(Transport *t) {
+  uint8_t buf[WIRE_HEADER_SIZE + WIRE_MAX_PAYLOAD];
 
-    fseek(f, 0, SEEK_END);
-    uint64_t size = (uint64_t)ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    const char *basename = strrchr(t->queued_path, '/');
-    basename = basename ? basename + 1 : t->queued_path;
-    uint32_t name_len = (uint32_t)strlen(basename);
-
-    size_t header_size = sizeof(FileHeader) + name_len;
-    ENetPacket *packet = enet_packet_create(NULL, header_size,
-                                             ENET_PACKET_FLAG_RELIABLE);
-    if (!packet) { fclose(f); return false; }
-
-    FileHeader *hdr = (FileHeader *)packet->data;
-    hdr->type = MSG_FILE_HEADER;
-    hdr->name_len = name_len;
-    hdr->file_size = size;
-    memcpy(packet->data + sizeof(FileHeader), basename, name_len);
-
-    if (enet_peer_send(t->peer, CHANNEL_CONTROL, packet) < 0) {
-        enet_packet_destroy(packet);
-        fclose(f);
-        return false;
+  for (;;) {
+    struct sockaddr_in from;
+    socklen_t fromlen = sizeof(from);
+    ssize_t n = recvfrom(t->sock, buf, sizeof(buf), 0, (struct sockaddr *)&from,
+                         &fromlen);
+    if (n < 0) {
+      return;
     }
 
-    t->send_file = f;
-    t->send_total = size;
-    t->send_sent = 0;
-    return true;
-}
-
-static bool send_file_chunk(Transport *t) {
-    if (!t->send_file) return false;
-
-    char buf[CHUNK_SIZE];
-    size_t n = fread(buf, 1, sizeof(buf), t->send_file);
-    if (n == 0) {
-        // Send completion marker
-        ENetPacket *done = enet_packet_create(NULL, 1,
-                                               ENET_PACKET_FLAG_RELIABLE);
-        done->data[0] = MSG_FILE_COMPLETE;
-        enet_peer_send(t->peer, CHANNEL_DATA, done);
-        fclose(t->send_file);
-        t->send_file = NULL;
-        return false;  // done
+    if (!t->peer_known) {
+      t->peer_addr = from;
+      t->peer_known = true;
     }
 
-    // Build data packet: 1-byte type + payload
-    ENetPacket *packet = enet_packet_create(NULL, 1 + n,
-                                             ENET_PACKET_FLAG_RELIABLE);
-    packet->data[0] = MSG_FILE_DATA;
-    memcpy(packet->data + 1, buf, n);
-    enet_peer_send(t->peer, CHANNEL_DATA, packet);
+    /* Parse the header BEFORE filtering on conn_id */
+    WireHeader h;
+    if (!parse_header(buf, (size_t)n, &h))
+      continue;
 
-    t->send_sent += n;
-    t->progress = (float)t->send_sent / (float)t->send_total;
-    if (t->cbs.on_progress)
-        t->cbs.on_progress(t->progress, t->user);
-    return true;
-}
-
-static void handle_control_packet(Transport *t, ENetPacket *packet) {
-    if (packet->dataLength < 1) return;
-    uint8_t type = packet->data[0];
-
-    if (type == MSG_FILE_HEADER) {
-        if (packet->dataLength < sizeof(FileHeader)) return;
-        FileHeader *hdr = (FileHeader *)packet->data;
-        if (packet->dataLength < sizeof(FileHeader) + hdr->name_len) return;
-
-        memcpy(t->recv_filename, packet->data + sizeof(FileHeader),
-               hdr->name_len);
-        t->recv_filename[hdr->name_len] = '\0';
-
-        t->recv_file = fopen(t->recv_filename, "wb");
-        t->recv_expected = hdr->file_size;
-        t->recv_received = 0;
+    /* Accept packets if we have no sender yet, or if the current
+     * transfer is finished (so a fresh sender can start a new one),
+     * or if the conn_id matches the active sender. */
+    if (t->sender_conn_id == 0 || !t->recv_in_progress ||
+        h.conn_id == t->sender_conn_id) {
+      t->sender_conn_id = h.conn_id;
+    } else {
+      continue;
     }
-}
 
-static void handle_data_packet(Transport *t, ENetPacket *packet) {
-    if (packet->dataLength < 1) return;
-    uint8_t type = packet->data[0];
+    switch (h.type) {
+    case WIRE_DATA:
+      receiver_handle_data(t, &h, buf + WIRE_HEADER_SIZE, h.payload_len);
+      break;
 
-    if (type == MSG_FILE_DATA && t->recv_file) {
-        size_t payload = packet->dataLength - 1;
-        fwrite(packet->data + 1, 1, payload, t->recv_file);
-        t->recv_received += payload;
-    } else if (type == MSG_FILE_COMPLETE && t->recv_file) {
-        fclose(t->recv_file);
-        t->recv_file = NULL;
-        if (t->cbs.on_file_received)
-            t->cbs.on_file_received(t->recv_filename,
-                                     t->recv_expected, t->user);
+    case WIRE_ACK:
+      sender_handle_ack(t, &h);
+      break;
+
+    case WIRE_CONTROL: {
+      if (h.payload_len < sizeof(ControlHeader))
+        break;
+
+      const uint8_t *p = buf + WIRE_HEADER_SIZE;
+      ControlHeader ctl;
+
+      memcpy(&ctl, p, sizeof(ctl));
+
+      if (ctl.control_type != CONTROL_FILE_HEADER)
+        break;
+
+      if (ctl.name_len > 250)
+        break;
+
+      if (h.payload_len < sizeof(ctl) + ctl.name_len)
+        break;
+
+      char name[256];
+
+      memcpy(name, p + sizeof(ctl), ctl.name_len);
+      name[ctl.name_len] = '\0';
+      receiver_open_file(t, name, ctl.file_size);
+
+      break;
     }
+
+    default:
+      break;
+    }
+  }
 }
 
 void transport_poll(Transport *t) {
-    if (!t || t->cancelled) return;
+  if (!t || t->cancelled)
+    return;
 
-    ENetEvent event;
-    while (enet_host_service(t->host, &event, 0) > 0) {
-        switch (event.type) {
-        case ENET_EVENT_TYPE_CONNECT:
-            t->peer = event.peer;
-            t->connected = true;
-            break;
-
-        case ENET_EVENT_TYPE_RECEIVE:
-            if (event.channelID == CHANNEL_CONTROL)
-                handle_control_packet(t, event.packet);
-            else if (event.channelID == CHANNEL_DATA)
-                handle_data_packet(t, event.packet);
-            enet_packet_destroy(event.packet);
-            break;
-
-        case ENET_EVENT_TYPE_DISCONNECT:
-            t->connected = false;
-            t->peer = NULL;
-            if (t->cbs.on_error)
-                t->cbs.on_error("Peer disconnected", t->user);
-            break;
-
-        default:
-            break;
-        }
-    }
-
-    // Process queued send
-    if (t->has_queued_send && t->connected && !t->send_file) {
-        t->has_queued_send = false;
-        if (!send_file_header(t)) {
-            if (t->cbs.on_error)
-                t->cbs.on_error("Failed to open file", t->user);
-        }
-    }
-
-    // Continue sending chunks (rate-limited by ENet's flow control)
-    if (t->send_file) {
-        send_file_chunk(t);
-    }
-}
-
-float transport_get_progress(const Transport *t) {
-    return t ? t->progress : 0.0f;
+  handle_incoming(t);
+  sender_pump(t);
+  sender_check_timeouts(t);
 }
 
 void transport_cancel(Transport *t) {
-    if (!t) return;
-    t->cancelled = true;
-    if (t->recv_file) { fclose(t->recv_file); t->recv_file = NULL; }
-    if (t->send_file) { fclose(t->send_file); t->send_file = NULL; }
+  if (!t)
+    return;
+
+  t->cancelled = true;
+  sender_close_file(t);
+  receiver_close_file(t);
 }
 
+float transport_get_progress(const Transport *t) {
+  if (!t || t->send_total_packets == 0)
+    return 0.0f;
+  else
+    return (float)t->send_acked_seq / (float)t->send_total_packets;
+}
+
+bool transport_send_complete(const Transport *t) {
+  return t ? t->send_completed_ok : false;
+}
+
+uint64_t transport_get_pacing_rate(const Transport *t) {
+  return t ? t->pacing_rate : 0;
+}
+
+uint64_t transport_get_cwnd(const Transport *t) {
+  /* Stage 2f will compute this from BBR.*/
+  (void)t;
+
+  return OUTGOING_QUEUE_SIZE;
+}
+
+uint64_t transport_get_min_rtt_us(const Transport *t) {
+  (void)t;
+  return 0; /* Stage 2f: from BBR */
+}
+
+const char *transport_get_bbr_state (const Transport *t)
+{
+  if (!t || !t->bbr) return "idle";
+  switch (bbr_mode (t->bbr))
+  {
+    case BBR_STARTUP:   return "STARTUP";
+    case BBR_DRAIN:     return "DRAIN";
+    case BBR_PROBE_BW:  return "PROBE_BW";
+    case BBR_PROBE_RTT: return "PROBE_RTT";
+    default:            return "UNKNOWN";
+  }
+}
+
+const char *transport_get_last_error(const Transport *t) {
+  return t ? t->last_error : "";
+}

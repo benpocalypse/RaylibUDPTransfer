@@ -13,10 +13,8 @@ void proxy_stop(int pid);
 
 // Builds and runs the SSH tunnel command:
 //   ssh -N -L <local>:localhost:<remote> user@host
-int proxy_start_ssh_tunnel(const char *remote_user,
-                           const char *remote_host,
-                           int local_port,
-                           int remote_port);
+int proxy_start_ssh_tunnel(const char *remote_user, const char *remote_host,
+                           int local_port, int remote_port);
 
 #endif
 
