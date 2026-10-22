@@ -3,9 +3,12 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 static int make_udp_socket(const char *host, int port,
@@ -170,23 +173,38 @@ static void handle_incoming(Transport *t) {
       return;
     }
 
-    if (!t->peer_known) {
-      t->peer_addr = from;
-      t->peer_known = true;
-    }
-
     /* Parse the header BEFORE filtering on conn_id */
     WireHeader h;
     if (!parse_header(buf, (size_t)n, &h))
       continue;
 
-    /* Accept packets if we have no sender yet, or if the current
-     * transfer is finished (so a fresh sender can start a new one),
-     * or if the conn_id matches the active sender. */
+    /* If a new sender shows up while we're idle, reset peer tracking
+     * so we learn the new sender's address. Without this, ACKs go to
+     * the previous sender's (now dead) ephemeral port. */
+    if (t->sender_conn_id != 0 && h.conn_id != t->sender_conn_id &&
+        !t->recv_in_progress)
+    {
+      fprintf (stderr, "receiver: new sender conn_id %08x (was %08x)\n",
+               h.conn_id, t->sender_conn_id);
+      t->sender_conn_id = 0;
+      t->peer_known = false;
+    }
+
+    /* Learn the peer's address if we don't have one yet. */
+    if (!t->peer_known)
+    {
+      t->peer_addr = from;
+      t->peer_known = true;
+    }
+
+    /* conn_id filter. */
     if (t->sender_conn_id == 0 || !t->recv_in_progress ||
-        h.conn_id == t->sender_conn_id) {
+        h.conn_id == t->sender_conn_id)
+    {
       t->sender_conn_id = h.conn_id;
-    } else {
+    }
+    else
+    {
       continue;
     }
 

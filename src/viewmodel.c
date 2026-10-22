@@ -19,16 +19,16 @@ void vm_init(ViewModel *vm) {
 
 static const char *state_to_string(TransferState s) {
   switch (s) {
-  case STATE_IDLE:
-    return "Idle";
-  case STATE_SENDING:
-    return "Sending";
-  case STATE_RECEIVING:
-    return "Receiving";
-  case STATE_ERROR:
-    return "Error";
-  case STATE_DONE:
-    return "Done";
+    case STATE_IDLE:
+      return "Idle";
+    case STATE_SENDING:
+      return "Sending";
+    case STATE_RECEIVING:
+      return "Receiving";
+    case STATE_ERROR:
+      return "Error";
+    case STATE_DONE:
+      return "Done";
   }
 
   return "Unknown";

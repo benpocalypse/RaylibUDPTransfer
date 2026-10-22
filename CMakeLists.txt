@@ -4,37 +4,22 @@ project(udp_transfer C)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-find_package(raylib REQUIRED)
-
 add_executable(udp_transfer
     src/main.c
-    src/model.c
-    src/viewmodel.c
-    src/view.c
     src/transport.c
     src/transport_utils.c
     src/transport_sender.c
     src/transport_receiver.c
-    src/unit_tests.c
     src/bbr.c
-    src/proxy.c
+    src/unit_tests.c
 )
 
 target_include_directories(udp_transfer PRIVATE
     include
-    third_party
 )
 
-target_link_libraries(udp_transfer PRIVATE raylib m pthread)
+target_link_libraries(udp_transfer PRIVATE m pthread)
 
 if(UNIX AND NOT APPLE)
-    target_link_libraries(udp_transfer PRIVATE dl rt X11)
+    target_link_libraries(udp_transfer PRIVATE dl rt)
 endif()
-
-add_custom_command(TARGET udp_transfer POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${CMAKE_SOURCE_DIR}/resources"
-        "$<TARGET_FILE_DIR:udp_transfer>/resources"
-    COMMENT "Copying resources/ to build output directory"
-)
-
